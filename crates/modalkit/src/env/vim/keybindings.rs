@@ -1284,6 +1284,27 @@ macro_rules! command_unfocus {
     };
 }
 
+macro_rules! command_bs_or_unfocus {
+    () => {
+        isv!(
+            vec![InternalAction::SetRegister(Register::Blackhole)],
+            vec![
+                ExternalAction::Something(
+                    EditorAction::Edit(
+                        EditAction::Delete.into(),
+                        EditTarget::Motion(
+                            MoveType::Column(MoveDir1D::Previous, true),
+                            Count::Contextual
+                        )
+                    )
+                    .into()
+                ),
+                ExternalAction::CommandExit(PromptAction::Abort(true))
+            ]
+        )
+    };
+}
+
 #[rustfmt::skip]
 fn default_keys<I: ApplicationInfo>() -> Vec<(MappedModes, &'static str, InputStep<I>)> {
     [
@@ -1704,7 +1725,6 @@ fn default_keys<I: ApplicationInfo>() -> Vec<(MappedModes, &'static str, InputSt
         ( ICMAP, "<C-V>{dec<=3}", chartype!() ),
         ( ICMAP, "<C-V>{any}", chartype!() ),
         ( ICMAP, "<C-W>", erase!(MoveType::WordBegin(WordStyle::Little, MoveDir1D::Previous)) ),
-        ( ICMAP, "<BS>", erase!(MoveType::Column(MoveDir1D::Previous, true)) ),
         ( ICMAP, "<Del>", erase!(MoveType::Column(MoveDir1D::Next, true)) ),
 
         // Insert Mode
@@ -1747,6 +1767,7 @@ fn default_keys<I: ApplicationInfo>() -> Vec<(MappedModes, &'static str, InputSt
         ( IMAP, "<Insert>", insert!(InsertStyle::Replace) ),
         ( IMAP, "<PageDown>", scroll2d!(MoveDir2D::Down, ScrollSize::Page) ),
         ( IMAP, "<PageUp>", scroll2d!(MoveDir2D::Up, ScrollSize::Page) ),
+        ( IMAP, "<BS>", erase!(MoveType::Column(MoveDir1D::Previous, true)) ),
 
         // Command mode
         ( CMAP, "<C-A>", unmapped!() ),
@@ -1780,6 +1801,7 @@ fn default_keys<I: ApplicationInfo>() -> Vec<(MappedModes, &'static str, InputSt
         ( CMAP, "<PageUp>", prompt!(PromptAction::Recall(RecallFilter::All, MoveDir1D::Previous, Count::Contextual)) ),
         ( CMAP, "<PageDown>", prompt!(PromptAction::Recall(RecallFilter::All, MoveDir1D::Next, Count::Contextual)) ),
         ( CMAP, "<Insert>", iact!(InternalAction::SetInsertStyle(InsertStyle::Replace)) ),
+        ( CMAP, "<BS>", command_bs_or_unfocus!()),
 
         // Operator-Pending mode
         ( OMAP, "gn", unmapped!() ),
@@ -2252,6 +2274,11 @@ mod tests {
     ));
     const CHECKPOINT: Action = Action::Editor(EditorAction::History(HistoryAction::Checkpoint));
     const CMDBAR_ABORT: Action = Action::Prompt(PromptAction::Abort(false));
+    const CMDBAR_ABORT_EMPTY: Action = Action::Prompt(PromptAction::Abort(true));
+    const CMDBAR_BS: Action = Action::Editor(EditorAction::Edit(
+        Specifier::Exact(EditAction::Delete),
+        EditTarget::Motion(MoveType::Column(MoveDir1D::Previous, true), Count::Contextual),
+    ));
     const CURSOR_CLOSE: Action =
         Action::Editor(EditorAction::Cursor(CursorAction::Close(CursorCloseTarget::Followers)));
     const CURSOR_SPLIT: Action =
@@ -2443,6 +2470,20 @@ mod tests {
         // Go back to Normal mode via Escape.
         vm.input_key(key!(KeyCode::Esc));
         assert_pop1!(vm, CMDBAR_ABORT, ctx);
+
+        ctx.persist.insert = None;
+        assert_eq!(vm.mode(), VimMode::Normal);
+        assert_pop1!(vm, CURSOR_CLOSE, ctx);
+        assert_pop1!(vm, CURRENT_POS, ctx);
+        assert_normal!(vm, ctx);
+
+        // Go back to Normal mode via Backspace.
+        vm.input_key(key!(':'));
+        assert_pop1!(vm, cmdbar_command(), ctx);
+        ctx.persist.insert = Some(InsertStyle::Insert);
+        vm.input_key(key!(KeyCode::Backspace));
+        assert_pop1!(vm, CMDBAR_BS, ctx);
+        assert_pop1!(vm, CMDBAR_ABORT_EMPTY, ctx);
 
         ctx.persist.insert = None;
         assert_eq!(vm.mode(), VimMode::Normal);
