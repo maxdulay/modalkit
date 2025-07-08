@@ -131,12 +131,16 @@ where
 
     fn abort(
         &mut self,
-        _empty: bool,
+        empty: bool,
         ctx: &EditContext,
         store: &mut Store<I>,
     ) -> EditResult<Vec<(Action<I>, EditContext)>, I> {
-        // We always unfocus currently, regardless of whether _empty=true.
         let act = Action::CommandBar(CommandBarAction::Unfocus);
+
+        let text = self.deref().deref().get_text();
+        if empty && !text.is_empty() {
+            return Ok(vec![])
+        }
 
         let text = self.reset().trim();
         store.registers.set_aborted_command(self.cmdtype, text);
